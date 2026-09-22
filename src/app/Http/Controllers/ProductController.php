@@ -2,88 +2,47 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Product\IndexProductRequest;
+use App\Http\Requests\Product\StoreProductRequest;
+use App\Http\Requests\Product\UpdateProductRequest;
+use App\Http\Resources\ProductResource;
 use App\Models\Product;
+use App\Services\ProductService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class ProductController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function __construct(private readonly ProductService $service)
     {
-        $products = Product::query()
-            ->when($request->filled('search'), fn ($query) => $query->where('title', 'like', '%'.$request->string('search')->toString().'%'))
-            ->when($request->filled('category'), fn ($query) => $query->where('category', $request->string('category')->toString()))
-            ->latest()
-            ->paginate(min($request->integer('limit', 10), 100));
-
-        return response()->json($products);
     }
 
-    public function show(Product $product): JsonResponse
+    public function index(IndexProductRequest $request): AnonymousResourceCollection
     {
-        return response()->json($product);
+        return ProductResource::collection($this->service->paginate($request->validated()));
     }
 
-    public function store(Request $request): JsonResponse
+    public function show(Product $product): ProductResource
     {
-        $validator = Validator::make($request->all(), $this->rules());
-
-        if ($validator->fails()) {
-            return response()->json(['message' => 'Validation failed.', 'errors' => $validator->errors()], 400);
-        }
-
-        $product = Product::create($this->productData($request, true));
-
-        return response()->json($product, 201);
+        return new ProductResource($this->service->find($product->id));
     }
 
-    public function update(Request $request, Product $product): JsonResponse
+    public function store(StoreProductRequest $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), $this->rules(true));
+        $product = $this->service->create($request->validated(), $request->user());
 
-        if ($validator->fails()) {
-            return response()->json(['message' => 'Validation failed.', 'errors' => $validator->errors()], 400);
-        }
+        return (new ProductResource($product))->response()->setStatusCode(201);
+    }
 
-        $product->update($this->productData($request));
-
-        return response()->json($product->fresh());
+    public function update(UpdateProductRequest $request, Product $product): ProductResource
+    {
+        return new ProductResource($this->service->update($product, $request->validated(), $request->user()));
     }
 
     public function destroy(Product $product): JsonResponse
     {
-        $product->delete();
+        $this->service->delete($product);
 
         return response()->json(['message' => 'Product deleted successfully.']);
-    }
-
-    private function rules(bool $partial = false): array
-    {
-        $required = $partial ? ['sometimes'] : ['required'];
-
-        return [
-            'title' => [...$required, 'string', 'max:255'],
-            'price' => [...$required, 'numeric', 'min:0'],
-            'description' => ['sometimes', 'nullable', 'string'],
-            'category' => [...$required, 'string', 'max:255'],
-            'images' => [...$required, 'array', 'min:1'],
-            'images.*' => ['string', 'url'],
-        ];
-    }
-
-    private function productData(Request $request, bool $creating = false): array
-    {
-        $user = $request->user();
-        $data = $request->only(['title', 'price', 'description', 'category', 'images']);
-        $data['updated_by'] = $user->name;
-        $data['updated_by_id'] = $user->id;
-
-        if ($creating) {
-            $data['created_by'] = $data['updated_by'];
-            $data['created_by_id'] = $user->id;
-        }
-
-        return $data;
     }
 }

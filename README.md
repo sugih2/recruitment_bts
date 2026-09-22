@@ -1,132 +1,153 @@
-# Laravel Docker Starter (WSL2) — Struktur Senior
+# BTS Recruitment API
 
-## 1. Prasyarat di WSL2
+REST API untuk sistem recruitment, dibangun dengan Laravel 12 (PHP 8.4), MySQL 8.4, dan Redis — dijalankan sepenuhnya lewat Docker.
+
+## Struktur Proyek
+
+```
+bts_recruitment/
+├── Makefile              # Shortcut perintah docker
+├── docker-compose.yml    # Definisi service (app, nginx, mysql, redis, node)
+├── .env                  # Konfigurasi docker-compose (gitignored)
+├── .env.example           # Template konfigurasi
+├── docker/
+│   ├── php/Dockerfile     # Image PHP-FPM custom
+│   ├── nginx/default.conf
+│   └── mysql/my.cnf
+└── src/                   # Source code Laravel (root aplikasi Laravel)
+    ├── app/
+    ├── routes/
+    ├── database/
+    └── ...
+```
+
+## Prasyarat
+
+- Docker & Docker Compose
+- Git
+
+## Instalasi Docker
+
+### Windows dengan WSL2 (Ubuntu) — disarankan
+
+**Opsi A — Docker Desktop (paling mudah)**
+1. Download & install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
+2. Saat instalasi, pastikan opsi **"Use WSL 2 based engine"** aktif
+3. Buka Docker Desktop → **Settings → Resources → WSL Integration** → aktifkan toggle untuk distro Ubuntu kamu
+4. Restart WSL: buka PowerShell, jalankan `wsl --shutdown`, lalu buka ulang terminal Ubuntu
+
+**Opsi B — Docker Engine langsung di WSL2 (tanpa Docker Desktop, lebih ringan)**
 ```bash
-# Cek Docker sudah bisa dipakai dari dalam WSL (Docker Desktop WSL integration aktif,
-# atau Docker Engine native di WSL)
+sudo apt-get update
+sudo apt-get install ca-certificates curl gnupg -y
+
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
+```
+
+Tambahkan user ke grup `docker` supaya tidak perlu `sudo` tiap perintah:
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+Jalankan Docker daemon (kalau pakai Opsi B tanpa systemd aktif):
+```bash
+sudo service docker start
+```
+
+### Verifikasi instalasi
+
+```bash
 docker --version
 docker compose version
 ```
-Jika belum ada Docker: install Docker Desktop di Windows lalu aktifkan
-**Settings > Resources > WSL Integration** untuk distro WSL yang dipakai.
-Kalau mau tanpa Docker Desktop, bisa install Docker Engine langsung di dalam WSL
-(distro Ubuntu) via `apt`.
 
-## 2. Siapkan project
+## Instalasi Proyek
+
 ```bash
-cd ~/projects
-mkdir myapp && cd myapp
-# taruh semua file starter kit ini di root folder ini
-cp .env.docker.example .env
-mkdir src   # nanti diisi source code Laravel
+git clone https://github.com/sugih2/recruitment_bts.git
+cd recruitment_bts
+make up
 ```
 
-## 3. Build image & install Laravel (API-only, tanpa UI)
+Perintah `make up` otomatis:
+1. Membuat `.env` dari `.env.example` (kalau belum ada)
+2. Mengisi `UID`/`GID` sesuai user host (supaya file yang dibuat container tidak owned `root`)
+3. Build & jalankan semua container (app, nginx, mysql, redis)
+
+Setelah container jalan, siapkan Laravel:
 ```bash
-make build          # build image PHP 8.4
-docker compose up -d mysql redis   # nyalakan dependency dulu
-make install        # laravel new . --no-authentication --no-node -> tanpa frontend scaffold
-make up             # nyalakan semua service (app, nginx, mysql, redis)
-```
-Catatan: flag `--api` sudah dihapus dari `laravel/installer` versi terbaru
-(^5.32). Sekarang cukup **tidak memilih** frontend apa pun (`--react`,
-`--vue`, `--svelte`, `--livewire`) supaya dapat skeleton polos tanpa
-Blade/Inertia. Flag yang dipakai di sini:
-- `--no-authentication` → skip scaffolding login/register/Breeze bawaan,
-  karena auth API akan kita tulis sendiri (lihat modul Auth di implementasi
-  coding test)
-- `--no-node` → skip install dependency npm (tidak relevan untuk backend saja)
-
-Skeleton hasil install tetap punya `routes/web.php` kosong dan
-`resources/views/welcome.blade.php` default — keduanya aman dihapus manual
-kalau mau benar-benar bersih.
-
-`make install` juga otomatis menjalankan `php artisan install:api`, yang:
-- membuat `routes/api.php` dan mendaftarkannya di `bootstrap/app.php`
-  (`->withRouting(..., api: __DIR__.'/../routes/api.php', ...)`)
-- memasang package `laravel/sanctum` untuk auth berbasis token
-
-Karena tidak ada UI, container `node` (profile `frontend`) tidak perlu dijalankan sama sekali —
-abaikan `make frontend` kecuali suatu saat butuh admin panel terpisah.
-
-Akses di `http://localhost:8080/api/...` (atau port sesuai `APP_PORT` di `.env`).
-
-## 4. Setelah Laravel ter-install
-```bash
-cp src/.env.example src/.env  # lalu selaraskan DB_HOST=mysql, DB_PORT=3306, dst.
 make artisan cmd="key:generate"
 make migrate
 ```
 
-## 5. Struktur folder "senior" di dalam `src/app`
-Alih-alih menumpuk semua Controller/Model dalam satu folder generik ala default
-Laravel, pisahkan per **modul/domain** supaya scalable dan gampang di-maintain
-oleh tim:
+Akses aplikasi di: **http://localhost:8080**
 
-```
-src/
-├── app/
-│   ├── Console/
-│   ├── Exceptions/
-│   ├── Http/
-│   │   ├── Middleware/
-│   │   └── Kernel.php
-│   ├── Providers/
-│   └── Modules/                 <-- inti struktur senior
-│       ├── User/
-│       │   ├── Http/
-│       │   │   ├── Controllers/
-│       │   │   ├── Requests/
-│       │   │   └── Resources/
-│       │   ├── Models/
-│       │   ├── Services/
-│       │   ├── Repositories/
-│       │   ├── Policies/
-│       │   ├── Events/
-│       │   ├── Listeners/
-│       │   ├── Routes/
-│       │   │   ├── api.php
-│       │   │   └── web.php
-│       │   └── Database/
-│       │       ├── Migrations/
-│       │       ├── Factories/
-│       │       └── Seeders/
-│       └── (Modul lain: Payroll/, Procurement/, dst — kosongkan dulu)
-├── bootstrap/
-├── config/
-├── database/                    <-- tetap ada untuk migration global/shared
-├── routes/
-│   └── web.php                  <-- hanya bootstrap load Modules/*/Routes
-├── tests/
-│   ├── Unit/
-│   └── Feature/
-└── ...
-```
+## Perintah Makefile
 
-**Prinsip yang ditegakkan sejak awal:**
-- Setiap modul **self-contained**: Controller, Model, Service, Repository,
-  Route, Migration miliknya sendiri hidup di dalam foldernya.
-- Business logic **tidak boleh** ditulis langsung di Controller — selalu lewat
-  `Service` (dan `Repository` untuk akses data jika query kompleks).
-- Route per modul di-`require` dari `routes/web.php` atau lewat
-  `RouteServiceProvider`, bukan ditulis manual satu file panjang.
-- Setiap modul boleh punya `Providers/{Module}ServiceProvider.php` sendiri
-  yang di-register di `bootstrap/providers.php`, supaya modul bisa "dicabut"
-  tanpa merusak modul lain.
-- Isi file (`Controller`, `Model`, dll) sengaja dikosongkan/skeleton dulu di
-  starter ini — konten disesuaikan begitu konteks aplikasi ditentukan.
+| Perintah | Fungsi |
+|---|---|
+| `make up` | Setup env + build & jalankan semua container |
+| `make down` | Hentikan semua container |
+| `make build` | Build ulang image tanpa cache |
+| `make shell` | Masuk ke shell container app |
+| `make artisan cmd="..."` | Jalankan artisan, contoh: `make artisan cmd="make:model Post -m"` |
+| `make migrate` | Jalankan migration |
+| `make fresh` | Migrate fresh + seed |
+| `make test` | Jalankan test suite |
+| `make logs` | Lihat log semua container |
+| `make frontend` | Jalankan container node (Vite dev server) |
 
-Kalau nanti mau strukturnya di-generate otomatis pakai package
-(`nwidart/laravel-modules`) daripada bikin manual, tinggal bilang — bisa
-disesuaikan.
+## Environment Variables (`.env` di root)
 
-## 6. Command harian
-| Perintah          | Fungsi                                   |
-|--------------------|-------------------------------------------|
-| `make up`          | start semua container                     |
-| `make down`        | stop semua container                      |
-| `make shell`       | masuk shell container `app`               |
-| `make artisan cmd="migrate"` | jalankan artisan command apa saja |
-| `make fresh`       | migrate:fresh --seed                      |
-| `make frontend`    | start container node (vite dev server)    |
-| `make logs`        | tail logs semua service                   |
+| Variable | Deskripsi | Default |
+|---|---|---|
+| `APP_PORT` | Port akses aplikasi (nginx) | 8080 |
+| `VITE_PORT` | Port Vite dev server | 5173 |
+| `DB_DATABASE` | Nama database | laravel |
+| `DB_USERNAME` | User MySQL | laravel |
+| `DB_PASSWORD` | Password MySQL | secret |
+| `DB_PORT` | Port MySQL (host) | 3306 |
+
+> Catatan: `src/.env` (config Laravel) terpisah dari `.env` root, dan harus punya `DB_HOST=mysql` (nama service, bukan `127.0.0.1`).
+
+## API Endpoints
+
+### Auth
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| POST | `/api/auth/register` | Registrasi user baru |
+| POST | `/api/auth/login` | Login, dapat token Sanctum |
+
+### Products
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| GET | `/api/products` | - | List produk (`search`, `category`, `limit`) |
+| GET | `/api/products/{id}` | - | Detail produk |
+| POST | `/api/products` | Bearer Token | Buat produk baru |
+| PUT | `/api/products/{id}` | Bearer Token | Update produk |
+| DELETE | `/api/products/{id}` | Bearer Token | Hapus produk |
+
+Postman collection: `bts_recruitment.postman_collection.json`.
+
+## Troubleshooting
+
+**File yang dibuat container jadi milik `root`**
+Pastikan `.env` root punya `UID`/`GID` sesuai `id -u` / `id -g` host, lalu `make build && make up`.
+
+**Error `Connection refused` ke database**
+Pastikan `src/.env` punya `DB_HOST=mysql`, bukan `127.0.0.1` — container saling terhubung lewat nama service Docker internal.
+
+## Lisensi
+
+Proyek internal.
