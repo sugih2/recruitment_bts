@@ -1,58 +1,233 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# BTS Recruitment API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+REST API Laravel untuk autentikasi dan manajemen produk. Aplikasi menggunakan MySQL sebagai database, Redis sebagai cache, Laravel Sanctum untuk token authentication, serta Resource/Service/Repository sebagai pemisah layer aplikasi.
 
-## About Laravel
+## Teknologi
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- PHP 8.3+
+- Laravel 13
+- MySQL 8.4
+- Redis 7
+- Laravel Sanctum
+- Docker Compose
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Menjalankan Aplikasi
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Dari root repository:
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+make up
+make migrate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+API tersedia di:
 
-## Contributing
+```text
+http://localhost:8080/api
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Perintah lain yang tersedia:
 
-## Code of Conduct
+```bash
+make down       # menghentikan container
+make logs       # melihat log Docker
+make shell      # masuk ke container app
+make fresh      # migrate:fresh --seed
+make test       # menjalankan test Laravel
+make frontend   # menjalankan service frontend Vite
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Konfigurasi Redis pada `.env`:
 
-## Security Vulnerabilities
+```env
+CACHE_STORE=redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Struktur Aplikasi
 
-## License
+```text
+app/
+├── Http/
+│   ├── Controllers/       # orkestrasi request dan response
+│   ├── Requests/           # validasi endpoint
+│   └── Resources/          # format response JSON
+├── Models/                 # model Eloquent
+├── Repositories/          # query dan persistence database
+└── Services/               # aturan bisnis, token, audit, dan cache
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+`ProductRepository` menggunakan Redis untuk cache list dan detail produk. Cache menggunakan versioned key sehingga perubahan produk tidak menghapus cache aplikasi lain.
+
+Operasi create, update, delete, dan register berjalan di dalam database transaction. API juga memiliki rate limit:
+
+- Register dan login: maksimal 3 request per menit per IP
+- Create, update, dan delete produk: maksimal 1 request per 5 detik per user/IP
+
+Jika batas tercapai, API mengembalikan HTTP `429 Too Many Requests`.
+
+## Authentication API
+
+### Register
+
+`POST /api/auth/register`
+
+Request:
+
+```json
+{
+  "username": "jhon_doe",
+  "password": "supersecret",
+  "password_confirmation": "supersecret"
+}
+```
+
+Kolom `username` API disimpan ke kolom `name` karena schema tabel `users` menggunakan kolom `name`, bukan `username`.
+
+Response berhasil mengandung:
+
+```json
+{
+  "user": {},
+  "authentication_token": "token-access",
+  "refresh_token": "token-refresh"
+}
+```
+
+### Login
+
+`POST /api/auth/login`
+
+Request:
+
+```json
+{
+  "username": "jhon_doe",
+  "password": "supersecret"
+}
+```
+
+Gunakan token pada endpoint yang memerlukan authorization:
+
+```http
+Authorization: Bearer <authentication_token>
+Accept: application/json
+```
+
+## Products API
+
+### List Produk
+
+`GET /api/products`
+
+Query parameter yang tersedia:
+
+| Parameter | Keterangan |
+| --- | --- |
+| `search` | mencari berdasarkan `title` |
+| `category` | memfilter kategori |
+| `limit` | jumlah data per halaman, maksimal 100 |
+| `page` | nomor halaman |
+
+Contoh:
+
+```text
+GET /api/products?search=shirt&category=Clothes&limit=10&page=1
+```
+
+### Detail Produk
+
+`GET /api/products/{id}`
+
+Mengembalikan detail produk. Produk yang tidak ditemukan menghasilkan response `404` JSON.
+
+### Tambah Produk
+
+`POST /api/products`
+
+Memerlukan Bearer token.
+
+```json
+{
+  "title": "Awesome T-Shirt",
+  "price": 99.99,
+  "description": "High-quality cotton t-shirt",
+  "category": "Clothes",
+  "images": [
+    "https://placehold.co/640x480"
+  ]
+}
+```
+
+Field wajib: `title`, `price`, `category`, dan `images`. Array `images` harus memiliki minimal satu URL.
+
+### Ubah Produk
+
+`PUT /api/products/{id}`
+
+Memerlukan Bearer token. Semua field produk bersifat opsional sehingga update parsial didukung.
+
+### Hapus Produk
+
+`DELETE /api/products/{id}`
+
+Memerlukan Bearer token dan mengembalikan pesan sukses setelah produk dihapus.
+
+## Schema Produk
+
+Produk memiliki field:
+
+```text
+id
+title
+price
+description
+category
+images
+created_at
+created_by
+created_by_id
+updated_at
+updated_by
+updated_by_id
+```
+
+Field `created_by` dan `updated_by` diisi dari user yang sedang terautentikasi.
+
+## Seeder
+
+Seeder membuat user contoh berikut:
+
+```text
+Name     : Jhon Doe
+Email    : jhon.doe@example.com
+Password : supersecret
+```
+
+Jalankan melalui:
+
+```bash
+make fresh
+```
+
+## Testing
+
+```bash
+make test
+```
+
+Coverage feature API tersedia pada:
+
+```text
+tests/Feature/Api/AuthenticationTest.php
+tests/Feature/Api/ProductAuthorizationTest.php
+```
+
+Pastikan migrasi sudah dijalankan sebelum menggunakan endpoint produk. Tanpa migrasi, tabel `products` dan `personal_access_tokens` belum tersedia.
+
+Atau jalankan test tertentu di dalam container:
+
+```bash
+make artisan cmd="test --filter=ExampleTest"
+```

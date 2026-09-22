@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use App\Repositories\AuthRepository;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class AuthService
@@ -15,11 +16,11 @@ class AuthService
 
     public function register(string $username, string $password): User
     {
-        return $this->repository->create([
-            'name' => $username,
-            'email' => $username.'@local.test',
-            'password' => $password,
-        ]);
+        return DB::transaction(fn (): User => $this->repository->create([
+                'name' => $username,
+                'email' => $username.'@local.test',
+                'password' => $password,
+            ]));
     }
 
     public function login(string $username, string $password): User

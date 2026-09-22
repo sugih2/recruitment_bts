@@ -22,9 +22,9 @@ class ProductController extends Controller
         return ProductResource::collection($this->service->paginate($request->validated()));
     }
 
-    public function show(Product $product): ProductResource
+    public function show(int $product): ProductResource
     {
-        return new ProductResource($this->service->find($product->id));
+        return new ProductResource($this->service->find($product));
     }
 
     public function store(StoreProductRequest $request): JsonResponse

@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Repositories\ProductRepository;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 
 class ProductService
 {
@@ -25,17 +26,19 @@ class ProductService
 
     public function create(array $data, User $user): Product
     {
-        return $this->repository->create($this->withAudit($data, $user, true));
+        return DB::transaction(fn (): Product => $this->repository->create($this->withAudit($data, $user, true)));
     }
 
     public function update(Product $product, array $data, User $user): Product
     {
-        return $this->repository->update($product, $this->withAudit($data, $user));
+        return DB::transaction(fn (): Product => $this->repository->update($product, $this->withAudit($data, $user)));
     }
 
     public function delete(Product $product): void
     {
-        $this->repository->delete($product);
+        DB::transaction(function () use ($product): void {
+            $this->repository->delete($product);
+        });
     }
 
     private function withAudit(array $data, User $user, bool $creating = false): array
